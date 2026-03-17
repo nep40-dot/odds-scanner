@@ -3,203 +3,152 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KALSHI_BOOKIE_SCANNER_V4</title>
+    <title>KALSHI_LIVE_SYNC_V5</title>
     <style>
         :root {
-            --bg: #050505;
-            --text: #00ff41;
-            --accent: #00bcff;
-            --kalshi: #ff00ff;
-            --gold: #ffcc00;
-            --border: #222;
+            --bg: #050505; --text: #00ff41; --accent: #00bcff;
+            --kalshi: #ff00ff; --border: #222; --gold: #ffcc00;
         }
-
         body {
-            background-color: var(--bg);
-            color: var(--text);
-            font-family: 'Courier New', monospace;
-            margin: 0; padding: 15px;
-            font-size: 12px;
+            background-color: var(--bg); color: var(--text);
+            font-family: 'Courier New', monospace; margin: 0; padding: 15px; font-size: 12px;
         }
-
         .layout { display: grid; grid-template-columns: 350px 1fr; gap: 20px; }
-        header { border-bottom: 2px solid var(--text); margin-bottom: 15px; padding-bottom: 5px; display: flex; justify-content: space-between; }
+        header { border-bottom: 2px solid var(--text); margin-bottom: 15px; display: flex; justify-content: space-between; }
         
-        /* Sidebar Tools */
-        .sidebar { background: #111; border: 1px solid var(--border); padding: 15px; height: fit-content; position: sticky; top: 15px; }
-        .sidebar h2 { color: var(--kalshi); font-size: 1.1em; margin-top: 0; border-bottom: 1px solid var(--kalshi); }
-        
-        .kalshi-status { margin-bottom: 15px; padding: 8px; border: 1px dashed var(--kalshi); font-size: 10px; }
-        .ev-alert { color: var(--gold); font-weight: bold; animation: blink 1s infinite; }
-        @keyframes blink { 50% { opacity: 0.5; } }
+        /* Kalshi Live Feed */
+        .sidebar { background: #111; border: 1px solid var(--kalshi); padding: 15px; height: fit-content; position: sticky; top: 15px; }
+        .k-item { border-bottom: 1px solid #333; padding: 8px 0; font-size: 10px; cursor: pointer; }
+        .k-item:hover { background: #1a1a1a; }
+        .k-ticker { color: var(--kalshi); font-weight: bold; }
+        .k-price { float: right; color: #fff; }
 
-        /* Tables */
         .card { border: 1px solid var(--border); margin-bottom: 15px; padding: 10px; background: #0a0a0a; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th, td { border: 1px solid #222; padding: 6px; text-align: center; }
         
-        .kalshi-col { border-left: 2px solid var(--kalshi); background: rgba(255, 0, 255, 0.05); }
-        .best-price { color: #000; background: var(--text); font-weight: bold; }
-        
-        button { background: transparent; color: var(--text); border: 1px solid var(--text); padding: 4px 8px; cursor: pointer; font-family: inherit; }
-        button:hover { background: var(--text); color: #000; }
-        .k-btn { border-color: var(--kalshi); color: var(--kalshi); }
+        .ev-hit { background: rgba(0, 255, 65, 0.2); border: 1px solid var(--text); font-weight: bold; }
+        .loading { animation: pulse 1.5s infinite; opacity: 0.5; }
+        @keyframes pulse { 50% { opacity: 1; } }
     </style>
 </head>
 <body>
 
 <header>
-    <div>> KALSHI_AUTO_SCANNER_v4.0</div>
-    <div id="api-status">API_REMAINING: --</div>
+    <div>> KALSHI_AUTO_SYNC_V5.0</div>
+    <div id="api-status">PULSES: --</div>
 </header>
 
 <div class="layout">
     <aside class="sidebar">
-        <h2>[ KALSHI_INTEGRATION ]</h2>
-        <div class="kalshi-status" id="k-status">
-            STATUS: WAITING_FOR_SYNC<br>
-            KEY: 326e...827a
+        <h2 style="color:var(--kalshi); font-size: 1.1em; margin-top:0;">[ KALSHI_LIVE_FEED ]</h2>
+        <div id="k-list">
+            <div class="loading">CONNECTING_TO_KALSHI_API...</div>
         </div>
-
-        <div id="edge-display">
-            <p>Scanning for discrepancies between Kalshi probability and Sportsbook implied odds...</p>
-        </div>
-
-        <div style="margin-top: 20px;">
-            <label>MANUAL KALSHI OVERRIDE (Cents)</label>
-            <input type="number" id="manual-k" style="width:100%; background:#000; color:#fff; border:1px solid var(--kalshi);" placeholder="e.g. 52">
-            <p style="font-size:9px; color:gray; margin-top:5px;">If Kalshi's API blocks the browser, enter their "Yes" price here to force a manual devig.</p>
-        </div>
+        <p style="font-size: 9px; margin-top: 10px; opacity: 0.6;">*Click a Kalshi market to "lock" it for comparison.</p>
     </aside>
 
     <main>
-        <div style="margin-bottom: 15px; display: flex; gap: 10px;">
-            <select id="sport-select" onchange="fetchData()">
+        <div style="margin-bottom: 15px;">
+            <select id="sport-select" onchange="refreshAll()">
                 <option value="basketball_nba">NBA</option>
-                <option value="basketball_ncaab">NCAAB</option>
                 <option value="americanfootball_nfl">NFL</option>
             </select>
-            <button onclick="fetchData()">SYNC_ALL_MARKETS</button>
+            <button onclick="refreshAll()">REFRESH_ALL</button>
         </div>
-
         <div id="results"></div>
     </main>
 </div>
 
 <script>
     const ODDS_API_KEY = 'a214334483f09eb0fa402ade597242d8';
-    const KALSHI_KEY = '326e19b1-4b86-4040-92dd-8d7b3752287a';
+    // We use a public CORS proxy to bypass Kalshi's browser restrictions
+    const PROXY = 'https://api.allorigins.win/raw?url=';
+    const KALSHI_URL = 'https://api.elections.kalshi.com/trade-api/v2/markets?status=open&limit=15&category=Sports';
 
-    // Helper: Convert American to Implied Prob
-    const amToProb = (am) => {
-        const val = parseFloat(am);
-        const dec = val > 0 ? (val/100)+1 : (100/Math.abs(val))+1;
-        return 1 / dec;
-    };
+    let activeKalshiPrice = null;
 
-    const decToAm = (dec) => {
-        if (dec >= 2) return `+${Math.round((dec - 1) * 100)}`;
-        return `${Math.round(-100 / (dec - 1))}`;
-    };
-
-    async function fetchData() {
-        const sport = document.getElementById('sport-select').value;
-        const resultsDiv = document.getElementById('results');
-        resultsDiv.innerHTML = 'INITIALIZING_DUAL_POLL...';
-
+    async function fetchKalshi() {
+        const kList = document.getElementById('k-list');
         try {
-            // 1. Fetch Sportsbooks
-            const oddsRes = await fetch(`https://api.the-odds-api.com/v4/sports/${sport}/odds/?apiKey=${ODDS_API_KEY}&regions=us&markets=h2h&bookmakers=draftkings,fanduel,betmgm`);
-            const oddsData = await oddsRes.json();
+            const res = await fetch(PROXY + encodeURIComponent(KALSHI_URL));
+            const data = await res.json();
             
-            document.getElementById('api-status').innerText = `PULSES: ${oddsRes.headers.get('x-requests-remaining')}`;
-
-            // 2. Mocking/Attempting Kalshi Logic 
-            // NOTE: Kalshi usually requires an 'Authorization' header with a session token.
-            // For this public demo, we'll build the table and allow the "Bridge" to sync them.
-            render(oddsData);
-            
-            document.getElementById('k-status').innerHTML = `STATUS: CONNECTED<br>SCANNING: ${sport.toUpperCase()}`;
+            kList.innerHTML = '';
+            data.markets.forEach(m => {
+                const div = document.createElement('div');
+                div.className = 'k-item';
+                // Kalshi returns prices in cents (e.g. 52 = 52%)
+                div.onclick = () => { activeKalshiPrice = m.yes_bid / 100; alert(`Locked Kalshi Price: ${m.yes_bid}¢`); };
+                div.innerHTML = `<span class="k-ticker">${m.ticker}</span> <span class="k-price">${m.yes_bid}¢</span><br>${m.title}`;
+                kList.appendChild(div);
+            });
         } catch (e) {
-            resultsDiv.innerHTML = 'SYNC_ERROR: CHECK_CONSOLE';
+            kList.innerHTML = '<span style="color:red">KALSHI_OFFLINE (CORS_LIMIT)</span>';
         }
     }
 
+    async function fetchOdds() {
+        const sport = document.getElementById('sport-select').value;
+        const resDiv = document.getElementById('results');
+        resDiv.innerHTML = '<div class="loading">SYNCING_SPORTSBOOKS...</div>';
+
+        try {
+            const res = await fetch(`https://api.the-odds-api.com/v4/sports/${sport}/odds/?apiKey=${ODDS_API_KEY}&regions=us&markets=h2h&bookmakers=draftkings,fanduel,betmgm`);
+            const data = await res.json();
+            document.getElementById('api-status').innerText = `PULSES: ${res.headers.get('x-requests-remaining')}`;
+            render(data);
+        } catch (e) {
+            resDiv.innerHTML = 'ODDS_API_ERROR';
+        }
+    }
+
+    function amToProb(am) {
+        const val = parseFloat(am);
+        const dec = val > 0 ? (val/100)+1 : (100/Math.abs(val))+1;
+        return 1 / dec;
+    }
+
+    function decToAm(dec) {
+        if (dec >= 2) return `+${Math.round((dec - 1) * 100)}`;
+        return `${Math.round(-100 / (dec - 1))}`;
+    }
+
     function render(data) {
-        const resultsDiv = document.getElementById('results');
-        resultsDiv.innerHTML = '';
+        const resDiv = document.getElementById('results');
+        resDiv.innerHTML = '';
 
         data.forEach(game => {
             const card = document.createElement('div');
             card.className = 'card';
-            
-            let html = `
-                <div style="display:flex; justify-content:space-between; color:var(--accent)">
-                    <strong>${game.away_team} @ ${game.home_team}</strong>
-                    <span>${new Date(game.commence_time).toLocaleTimeString()}</span>
-                </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>SOURCE</th>
-                            <th>${game.away_team}</th>
-                            <th>${game.home_team}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr class="kalshi-col" style="color:var(--kalshi)">
-                            <td>KALSHI_EST</td>
-                            <td id="k-away-${game.id}">--</td>
-                            <td id="k-home-${game.id}">--</td>
-                        </tr>
-            `;
+            let html = `<strong>${game.away_team} @ ${game.home_team}</strong><table><tr><th>BOOK</th><th>AWAY</th><th>HOME</th></tr>`;
 
             game.bookmakers.forEach(bm => {
                 const m = bm.markets[0];
-                const awayOdds = decToAm(m.outcomes[1].price);
-                const homeOdds = decToAm(m.outcomes[0].price);
+                const awayAm = decToAm(m.outcomes[1].price);
+                const homeAm = decToAm(m.outcomes[0].price);
+                
+                // If a Kalshi price is clicked, highlight the edge
+                const awayProb = amToProb(awayAm);
+                const isEdge = activeKalshiPrice && (activeKalshiPrice > (awayProb + 0.03));
 
-                html += `
-                    <tr>
-                        <td style="font-size:10px">${bm.title.toUpperCase()}</td>
-                        <td>${awayOdds} <button class="k-btn" onclick="checkEdge('${awayOdds}', '${game.id}', 'away')">CALC</button></td>
-                        <td>${homeOdds} <button class="k-btn" onclick="checkEdge('${homeOdds}', '${game.id}', 'home')">CALC</button></td>
-                    </tr>
-                `;
+                html += `<tr><td>${bm.title}</td>
+                    <td class="${isEdge ? 'ev-hit' : ''}">${awayAm}</td>
+                    <td>${homeAm}</td></tr>`;
             });
 
-            html += `</tbody></table>`;
+            html += `</table>`;
             card.innerHTML = html;
-            resultsDiv.appendChild(card);
+            resDiv.appendChild(card);
         });
     }
 
-    function checkEdge(bookAm, gameId, side) {
-        const manualK = document.getElementById('manual-k').value;
-        if (!manualK) {
-            alert("Enter Kalshi 'Yes' price (cents) in the sidebar first!");
-            return;
-        }
-
-        const kProb = parseFloat(manualK) / 100;
-        const bProb = amToProb(bookAm);
-        const edge = (kProb - bProb) * 100;
-
-        // Update the table cell visually
-        const cell = document.getElementById(`k-${side}-${gameId}`);
-        cell.innerText = `${manualK}¢ (${edge > 0 ? '+' : ''}${edge.toFixed(1)}%)`;
-        cell.style.color = edge > 0 ? 'var(--text)' : 'var(--kalshi)';
-
-        // Display in sidebar
-        const edgeDiv = document.getElementById('edge-display');
-        if (edge > 2) {
-            edgeDiv.innerHTML = `<div class="ev-alert">> +EV EDGE FOUND: ${edge.toFixed(2)}%<br>BET: ${bookAm} vs Kalshi ${manualK}¢</div>`;
-        } else {
-            edgeDiv.innerHTML = `<div>Edge: ${edge.toFixed(2)}% (Below Threshold)</div>`;
-        }
+    function refreshAll() {
+        fetchKalshi();
+        fetchOdds();
     }
 
-    window.onload = fetchData;
+    window.onload = refreshAll;
 </script>
 </body>
 </html>
